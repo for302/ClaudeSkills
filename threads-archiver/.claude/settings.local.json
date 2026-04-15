@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python scripts/fetch_threads.py*)",
+      "Bash(pip install playwright*)",
+      "Bash(playwright install chromium*)"
+    ]
+  }
+}

@@ -8,7 +8,9 @@
       "Bash(claude:*)",
       "Skill(paper-analyzer)",
       "WebFetch(domain:code.claude.com)",
-      "Read(//c/Users/DanteHome/**)"
+      "Read(//c/Users/DanteHome/**)",
+      "Bash(mkdir -p \"C:/Users/for30/.claude/skills\")",
+      "Bash(cp -r \"D:/Web_Dev/ClaudeSkills/threads-archiver\" \"C:/Users/for30/.claude/skills/\")"
     ],
     "deny": [],
     "ask": []
