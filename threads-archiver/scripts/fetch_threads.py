@@ -410,9 +410,11 @@ def main():
         print('오류: Markdown 생성에 실패했습니다.', file=sys.stderr)
         sys.exit(1)
 
-    date_tag = today.strftime('%Y%m%d')
-    filename = f'Threads_@{author}_{date_tag}.md'
-    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    posts_sorted_for_name = sorted(posts, key=lambda p: p.get('taken_at', 0))
+    first_text_for_name = posts_sorted_for_name[0].get('text', '') if posts_sorted_for_name else ''
+    title_for_name = get_first_sentence(first_text_for_name) or f'@{author}_스레드'
+    filename = f'{title_for_name}.md'
+    filename = re.sub(r'[<>:"/\\|?*\n\r\t]', '_', filename)
     output_path = output_dir / filename
 
     output_path.write_text(md_content, encoding='utf-8')

@@ -63,7 +63,7 @@ PYTHONIOENCODING=utf-8 python scripts/fetch_threads.py "https://www.threads.com/
 
 ## 출력 파일 형식
 
-**파일명:** `스레드_@username_YYYYMMDD.md`
+**파일명:** `{첫번째_포스트_첫줄}.md`
 
 **내용 구조:**
 
