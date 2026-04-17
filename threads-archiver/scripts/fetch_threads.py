@@ -205,42 +205,66 @@ def extract_posts_from_edges(edges: list, target_author: str) -> list[dict]:
     return all_posts
 
 
-def extract_posts_from_page(page, target_author: str) -> list[dict]:
-    """Playwright page에서 포스트 추출. 두 가지 경로를 시도."""
-    all_posts = []
+def find_best_edges(data: dict, target_author: str) -> list[dict]:
+    """JSON에서 target_author 포스트가 가장 많이 담긴 단일 edges 배열 반환 (순서 보존)"""
+    best_posts = []
+    edges_lists = find_all_values(data, 'edges')
+    for edges in edges_lists:
+        if not isinstance(edges, list) or not edges:
+            continue
+        first = edges[0] if edges else {}
+        if not (isinstance(first, dict) and 'node' in first):
+            continue
+        node = first['node']
+        if not (isinstance(node, dict) and 'thread_items' in node):
+            continue
+        posts = extract_posts_from_edges(edges, target_author)
+        if len(posts) > len(best_posts):
+            best_posts = posts
+    return best_posts
 
+
+def extract_posts_from_page(page, target_author: str, extra_jsons: list) -> list[dict]:
+    """Playwright page + 인터셉트된 JSON 응답에서 포스트 추출.
+    각 JSON 소스에서 가장 많은 포스트를 담은 단일 edges 배열만 사용하고,
+    전체 소스 중 가장 많은 포스트를 담은 결과를 반환한다."""
+    best_posts = []
+
+    sources = []
+
+    # 인터셉트된 네트워크 응답
+    for json_text in extra_jsons:
+        if target_author and target_author not in json_text:
+            continue
+        if 'taken_at' not in json_text:
+            continue
+        try:
+            data = json.loads(json_text)
+            sources.append(data)
+        except (json.JSONDecodeError, Exception):
+            continue
+
+    # script 태그 내 JSON
     scripts = page.query_selector_all('script[type="application/json"]')
-
     for s in scripts:
         txt = s.inner_text() or ''
-        # target_author가 없거나 텍스트에 포함된 script만 처리
         if target_author and target_author not in txt:
             continue
         if 'taken_at' not in txt:
             continue
-
         try:
             data = json.loads(txt)
+            sources.append(data)
         except (json.JSONDecodeError, Exception):
             continue
 
-        # 방법 1: data.data.edges 구조 (주 스레드 포스트)
-        edges_lists = find_all_values(data, 'edges')
-        for edges in edges_lists:
-            if not isinstance(edges, list) or not edges:
-                continue
-            # node.thread_items 구조 확인
-            first = edges[0] if edges else {}
-            if isinstance(first, dict) and 'node' in first:
-                node = first['node']
-                if isinstance(node, dict) and 'thread_items' in node:
-                    posts = extract_posts_from_edges(edges, target_author)
-                    all_posts.extend(posts)
+    # 각 소스에서 가장 많은 포스트를 담은 edges 배열 선택
+    for data in sources:
+        posts = find_best_edges(data, target_author)
+        if len(posts) > len(best_posts):
+            best_posts = posts
 
-        # 방법 2: relatedPosts.threads 구조 (관련 포스트 - 보통 스킵)
-        # 이건 다른 유저 포스트이므로 제외
-
-    return all_posts
+    return best_posts
 
 
 # ─────────────────────────────────────────────
@@ -253,8 +277,8 @@ def build_markdown(posts: list[dict], url: str, author: str, today: datetime) ->
     if not posts:
         return ''
 
-    # taken_at 기준 정렬
-    posts_sorted = sorted(posts, key=lambda p: p.get('taken_at', 0))
+    # 원래 thread 순서 유지 (재정렬 없음)
+    posts_sorted = posts
 
     first_post = posts_sorted[0]
     first_text = first_post.get('text', '')
@@ -355,6 +379,15 @@ def main():
         print('설치: pip install playwright && playwright install chromium', file=sys.stderr)
         sys.exit(1)
 
+    # 저장된 쿠키 로드 (로그인 상태 유지)
+    cookie_file = Path(__file__).parent / 'threads_cookies.json'
+    saved_cookies = []
+    if cookie_file.exists():
+        try:
+            saved_cookies = json.loads(cookie_file.read_text(encoding='utf-8'))
+        except Exception:
+            pass
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(
@@ -365,7 +398,28 @@ def main():
             ),
             locale='ko-KR',
         )
+        if saved_cookies:
+            try:
+                context.add_cookies(saved_cookies)
+            except Exception:
+                pass
         page = context.new_page()
+
+        # 네트워크 응답 인터셉트 (GraphQL/API 응답 수집)
+        intercepted_jsons = []
+
+        def handle_response(response):
+            try:
+                ct = response.headers.get('content-type', '')
+                # Threads는 application/x-javascript로 JSON 데이터를 반환
+                if 'json' in ct or 'javascript' in ct:
+                    body = response.text()
+                    if 'taken_at' in body and len(body) > 100:
+                        intercepted_jsons.append(body)
+            except Exception:
+                pass
+
+        page.on('response', handle_response)
 
         print(f'[2/4] 페이지 로드 중: {url}', flush=True)
 
@@ -380,8 +434,39 @@ def main():
                 browser.close()
                 sys.exit(1)
 
+        # "더 보기" 버튼 클릭 시도
+        try:
+            show_more = page.query_selector_all('div[role="button"]')
+            for btn in show_more:
+                txt = btn.inner_text().strip()
+                if any(kw in txt for kw in ['더 보기', 'Show more', 'See more', '더보기']):
+                    btn.click()
+                    page.wait_for_timeout(1500)
+                    break
+        except Exception:
+            pass
+
+        # 스크롤을 내려 lazy-load 트리거 (더 많은 포스트 로드)
+        for _ in range(15):
+            page.evaluate('window.scrollBy(0, 700)')
+            page.wait_for_timeout(700)
+
+        # 다시 "더 보기" 버튼 클릭 시도
+        try:
+            show_more = page.query_selector_all('div[role="button"]')
+            for btn in show_more:
+                txt = btn.inner_text().strip()
+                if any(kw in txt for kw in ['더 보기', 'Show more', 'See more', '더보기']):
+                    btn.click()
+                    page.wait_for_timeout(1500)
+                    break
+        except Exception:
+            pass
+
+        page.wait_for_timeout(2000)
+
         print('[3/4] 포스트 데이터 추출 중...', flush=True)
-        posts = extract_posts_from_page(page, author)
+        posts = extract_posts_from_page(page, author, intercepted_jsons)
 
         browser.close()
 
@@ -390,17 +475,24 @@ def main():
         print('페이지 구조가 변경되었거나 비공개 계정일 수 있습니다.', file=sys.stderr)
         sys.exit(1)
 
-    # 중복 제거 (동일 taken_at)
+    # 중복 제거 (taken_at + 텍스트 앞 40자 조합으로 판단)
     seen = set()
     unique_posts = []
     for post in posts:
-        key = post.get('taken_at', 0)
-        if key and key not in seen:
+        ta = post.get('taken_at', 0)
+        text_key = post.get('text', '')[:40]
+        key = (ta, text_key)
+        if key not in seen:
             seen.add(key)
             unique_posts.append(post)
-        elif not key:
-            unique_posts.append(post)
     posts = unique_posts
+
+    # 시리즈 포스트 필터링: 최소 타임스탬프 기준 300초 이내 포스트만 유지
+    # (댓글 replies는 수 분~수 시간 후에 작성됨) — 원래 순서(thread 순) 보존
+    if len(posts) > 1:
+        min_ta = min((p.get('taken_at', 0) for p in posts if p.get('taken_at', 0) > 0), default=0)
+        if min_ta > 0:
+            posts = [p for p in posts if abs(p.get('taken_at', 0) - min_ta) <= 300]
 
     print(f'[4/4] Markdown 생성 중... (포스트 {len(posts)}개)', flush=True)
 

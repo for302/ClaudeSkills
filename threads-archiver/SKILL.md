@@ -1,71 +1,169 @@
 ---
 name: threads-archiver
-description: Threads.com(스레드) 포스트 URL을 받아 연결된 시리즈 포스트 전체를 자동 수집하고 Obsidian 최적화 Markdown 파일로 저장하는 스킬. 스레드 링크 저장, 컨텐츠 아카이브, 시리즈 글 정리 시 사용. URL 하나만 주면 1/N~N/N 순서로 모든 포스트 텍스트와 이미지/동영상을 하나의 .md 파일에 정리해준다. "스레드 저장해줘", "threads 아카이브", "스레드 내용 정리" 같은 요청에 항상 이 스킬을 사용할 것.
+description: Threads.com(스레드) 포스트를 수집하여 Obsidian 최적화 Markdown 파일로 저장하는 스킬. 단일 URL 아카이브, 프로필 전체 벌크 수집, 날짜 범위 필터, 병렬 다운로드, 로그인 인증을 모두 지원한다. "스레드 저장해줘", "threads 아카이브", "프로필 전체 다운로드", "최신 포스트 수집", "스레드 업데이트 확인" 같은 요청에 이 스킬을 사용할 것.
 ---
 
 # Threads Archiver
 
-Threads.com 포스트 URL을 받아 해당 스레드와 연결된 모든 시리즈 포스트(1/N, 2/N, ...)를 순서대로 수집하여 **Obsidian 최적화 Markdown 파일**로 저장한다.
+Threads.com 포스트를 수집하여 **Obsidian 최적화 Markdown 파일**로 저장한다.  
+단일 URL 아카이브부터 프로필 전체 벌크 수집까지 지원하며, 다중 계정·대량 수집 시 Claude Agent를 병렬로 실행한다.
 
-## 목적
+## 스크립트 구성
 
-- 스레드 컨텐츠를 영구 보존 (Obsidian 지식창고에 저장)
-- 시리즈 포스트(1/5, 2/5 ... 5/5)를 자동으로 전부 수집
-- 이미지와 동영상 링크를 인라인으로 포함
-- YAML frontmatter로 메타데이터 구조화 (검색/필터 가능)
+| 스크립트 | 역할 |
+|---|---|
+| `scripts/fetch_threads.py` | 단일 포스트 URL → 시리즈 전체 수집 → .md 저장 |
+| `scripts/fetch_profile_urls.py` | 프로필 페이지 스크롤 → 날짜 범위 내 포스트 URL 목록 추출 |
+| `scripts/bulk_download.py` | URL 목록 → 병렬 일괄 다운로드 |
+| `scripts/split_urls.py` | URL 목록 파일 → N개 청크 파일로 균등 분할 |
+| `scripts/save_login.py` | 브라우저 로그인 → 쿠키 저장 (프로필 벌크 수집 시 필요) |
 
-## 사용 시점
-
-- Threads 링크를 저장하거나 내용을 정리하고 싶을 때
-- 시리즈 포스트 전체를 한 파일에 모으고 싶을 때
-- 스레드 컨텐츠를 Obsidian에 아카이브할 때
+스킬 기본 디렉토리: `D:/Web_Dev/ClaudeSkills/threads-archiver`  
+쿠키 저장 위치: `scripts/threads_cookies.json` (save_login.py 실행 후 자동 생성)
 
 ---
 
-## 워크플로우
+## 등록된 계정
 
-### Step 1: 의존성 확인
+수집 대상 계정, 저장 경로, 마지막 수집일은 `references/accounts.md`에서 관리한다.  
+"업데이트 수집해줘" 요청 시 이 파일을 먼저 읽어 등록된 계정 목록과 마지막 수집일을 확인한다.  
+다른 사용자가 이 스킬을 사용할 때는 `references/accounts.md`의 계정 정보를 본인 계정으로 교체한다.
 
-처음 사용 시 아래 명령으로 Playwright를 설치한다:
+---
+
+## 사용 시점
+
+- **단일 URL 저장**: Threads 링크 하나를 저장하거나 내용을 정리하고 싶을 때
+- **신규 계정 벌크 수집**: 특정 계정을 처음 등록하고 과거 포스트를 날짜 범위로 수집할 때
+- **최신 업데이트 수집**: "업데이트 수집해줘" → `references/accounts.md` 확인 → 등록된 계정 전체를 계정당 1개 Agent로 병렬 수집
+
+---
+
+## 의존성 확인
+
+처음 사용 시 설치:
 
 ```bash
 pip install playwright
 playwright install chromium
 ```
 
-이미 설치되어 있으면 Skip.
+---
 
-### Step 2: 스크립트 실행
-
-스킬 디렉토리(`threads-archiver/`)에서 실행:
+## 워크플로우 A: 단일 URL 아카이브
 
 ```bash
-cd /d/Web_Dev/ClaudeSkills/threads-archiver
+cd D:/Web_Dev/ClaudeSkills/threads-archiver
 PYTHONIOENCODING=utf-8 python scripts/fetch_threads.py "<THREADS_URL>" --output "<저장할_경로>"
 ```
 
-**예시:**
+완료 후 생성된 `.md` 파일 경로, 포스트 수, 이미지 수를 사용자에게 알린다.
+
+---
+
+## 워크플로우 B: 신규 계정 벌크 수집
+
+### Step 1: 로그인 (처음 한 번만)
+
 ```bash
-PYTHONIOENCODING=utf-8 python scripts/fetch_threads.py "https://www.threads.com/@specal1849/post/DW6xjIhEQsn" --output "C:/Users/username/Obsidian/threads"
+cd D:/Web_Dev/ClaudeSkills/threads-archiver
+PYTHONIOENCODING=utf-8 python scripts/save_login.py
 ```
 
-> Windows 환경에서는 한글 출력을 위해 `PYTHONIOENCODING=utf-8` 환경변수 설정이 필요합니다.
+### Step 2: URL 목록 수집
 
-`--output`을 생략하면 현재 디렉토리에 저장.
+```bash
+PYTHONIOENCODING=utf-8 python scripts/fetch_profile_urls.py "<프로필_URL>" \
+  --start-date <YYYY-MM-DD> \
+  [--end-post <포스트_코드>] \
+  --max-scrolls 100 \
+  > /tmp/urls.txt
+```
 
-### Step 3: 결과 확인
+### Step 3: URL 수에 따라 분기 처리
 
-스크립트가 완료되면:
-- 생성된 `.md` 파일 경로를 사용자에게 알린다
-- YAML frontmatter, 포스트 수, 이미지 수를 요약해서 보여준다
+URL 개수를 확인한다:
+
+```bash
+wc -l /tmp/urls.txt
+```
+
+**≤ 50개**: 바로 다운로드
+
+```bash
+PYTHONIOENCODING=utf-8 python scripts/bulk_download.py \
+  --file /tmp/urls.txt --output "<저장할_경로>" --workers 3
+```
+
+**51~150개**: 2개 청크로 분할 → **2개 Agent 병렬 실행**
+
+```bash
+# 청크 분할
+PYTHONIOENCODING=utf-8 python scripts/split_urls.py /tmp/urls.txt \
+  --chunks 2 --output-dir /tmp/chunks
+```
+
+단일 메시지에서 2개 Agent를 동시에 실행한다. 각 Agent에게 전달:
+- 맡은 청크 파일 경로 (`/tmp/chunks/chunk_01.txt`, `/tmp/chunks/chunk_02.txt`)
+- 저장 경로
+- 스킬 디렉토리: `D:/Web_Dev/ClaudeSkills/threads-archiver`
+- 실행할 명령: `PYTHONIOENCODING=utf-8 python scripts/bulk_download.py --file <청크파일> --output <저장경로> --workers 2`
+
+**151개 이상**: 3개 청크로 분할 → **3개 Agent 병렬 실행**
+
+```bash
+PYTHONIOENCODING=utf-8 python scripts/split_urls.py /tmp/urls.txt \
+  --chunks 3 --output-dir /tmp/chunks
+```
+
+단일 메시지에서 3개 Agent를 동시에 실행한다 (각 Agent: --workers 2).  
+전체 동시 브라우저 수 = 청크 수(3) × workers(2) = 6개.
+
+### Step 4: 완료 후 처리
+
+- 각 Agent의 결과(성공/실패 수)를 취합하여 사용자에게 보고한다.
+- 실패 URL이 있으면 재시도하거나 목록을 사용자에게 전달한다.
+- `references/accounts.md`에 새 계정과 오늘 날짜를 추가한다.
+
+---
+
+## 워크플로우 C: 등록 계정 업데이트 수집 (병렬 Agent)
+
+"업데이트 수집해줘" 또는 유사한 요청 시 실행한다.
+
+### Step 1: 계정 목록 확인
+
+`references/accounts.md`를 읽어 등록된 모든 계정과 마지막 수집일을 확인한다.
+
+### Step 2: 계정당 1개 Agent 병렬 실행
+
+**등록된 계정 수만큼 Agent를 단일 메시지에서 동시에 실행한다.**  
+각 Agent에게 전달할 내용:
+
+```
+다음 Threads 계정의 새 포스트를 수집해줘:
+- 프로필 URL: <계정_프로필_URL>
+- start-date: <마지막_수집일 + 1일>  (예: 마지막 수집일이 2026-04-18이면 2026-04-19)
+- 저장 경로: <저장_경로>
+- 스킬 디렉토리: D:/Web_Dev/ClaudeSkills/threads-archiver
+
+실행 순서:
+1. fetch_profile_urls.py로 URL 목록 수집 (--max-scrolls 20)
+2. URL 수 확인 후 적절한 방법으로 bulk_download 실행
+   (≤50개: workers 3 직접 실행 / >50개: split_urls.py로 분할 후 서브 Agent 병렬 실행)
+3. 성공/실패 수 보고
+```
+
+### Step 3: 결과 취합 및 accounts.md 업데이트
+
+- 모든 Agent 완료 후 각 계정의 성공/실패를 취합하여 사용자에게 보고한다.
+- `references/accounts.md`의 각 계정 마지막 수집일을 오늘 날짜로 업데이트한다.
 
 ---
 
 ## 출력 파일 형식
 
-**파일명:** `{첫번째_포스트_첫줄}.md`
-
-**내용 구조:**
+**파일명:** `{첫번째_포스트_첫 문장}.md`
 
 ```markdown
 ---
@@ -81,55 +179,15 @@ tags:
 # 제미나이에 새로운 기능이 업데이트 되었습니다
 
 ## 1/5
-
-제미나이에 새로운 기능이 업데이트 되었습니다.
-시각자료 표시라는 이름으로 ...
-
-![](https://cdn.threads.net/image_url_here)
-
----
-
-## 2/5
-
-아무리 오류가 있어도 가장 정확하게 기능을 활용하는건 ...
-
-![](https://cdn.threads.net/image_url_here)
-
----
+...
 ```
-
----
-
-## YAML Frontmatter 필드
-
-| 필드 | 설명 | 예시 |
-|------|------|------|
-| `thread_url` | 원본 스레드 URL | `"https://www.threads.com/@user/post/ID"` |
-| `author` | 작성자 @username | `"@specal1849"` |
-| `date` | 작성일 (상대→절대 변환) | `"2026-04-11"` |
-| `total_posts` | 시리즈 전체 포스트 수 | `5` |
-| `tags` | Obsidian 태그 | `["threads", "archive"]` |
-
-**날짜 변환 규칙:**
-- "5일" → 오늘 - 5일
-- "1주" → 오늘 - 7일
-- "2시간" / "30분" → 오늘
-- "5d" / "1w" / "2h" → 동일 방식 처리
-- 절대 날짜 표시 시 → 그대로 사용
-
----
-
-## 이미지 & 동영상 처리
-
-- **이미지**: CDN URL을 `![](url)` 마크다운 문법으로 삽입 → Obsidian에서 인라인 미리보기
-- **동영상**: `[동영상 보기](url)` 링크로만 삽입 (다운로드 없음)
-- 로그인 없이 공개 포스트 CDN URL 직접 사용
 
 ---
 
 ## 주의사항
 
-- 공개 포스트만 수집 가능 (비공개 계정 불가)
-- Playwright가 헤드리스 브라우저를 실행하므로 첫 실행 시 수 초 소요
-- 이미지 CDN URL은 일정 기간 후 만료될 수 있음
-- 시리즈 패턴(X/N)이 없는 단독 포스트도 저장 가능 (total_posts: 1)
+- 로그인 쿠키(`threads_cookies.json`)는 일정 기간 후 만료된다. 수집 실패 시 `save_login.py`를 재실행한다.
+- 전체 동시 브라우저 수가 6개를 초과하면 IP 차단 위험이 있다. Agent 수 × workers ≤ 6을 유지한다.
+- 비공개 계정은 수집 불가.
+- Windows에서는 반드시 `PYTHONIOENCODING=utf-8` 환경변수를 붙여서 실행한다.
+- 이미지 CDN URL은 일정 기간 후 만료될 수 있다.
