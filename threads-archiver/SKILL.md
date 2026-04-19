@@ -12,9 +12,9 @@ Threads.com 포스트를 수집하여 **Obsidian 최적화 Markdown 파일**로 
 
 | 스크립트 | 역할 |
 |---|---|
-| `scripts/fetch_threads.py` | 단일 포스트 URL → 시리즈 전체 수집 → .md 저장 |
+| `scripts/fetch_threads.py` | 단일 포스트 URL → 시리즈 전체 수집 → .md 저장. `--translate ko` 옵션으로 한국어 번역 지원 |
 | `scripts/fetch_profile_urls.py` | 프로필 페이지 스크롤 → 날짜 범위 내 포스트 URL 목록 추출 |
-| `scripts/bulk_download.py` | URL 목록 → 병렬 일괄 다운로드 |
+| `scripts/bulk_download.py` | URL 목록 → 병렬 일괄 다운로드. `--translate <lang>` 옵션 지원. 출력 폴더의 `_collected.log`로 중복 수집 방지 |
 | `scripts/split_urls.py` | URL 목록 파일 → N개 청크 파일로 균등 분할 |
 | `scripts/save_login.py` | 브라우저 로그인 → 쿠키 저장 (프로필 벌크 수집 시 필요) |
 
@@ -44,9 +44,11 @@ Threads.com 포스트를 수집하여 **Obsidian 최적화 Markdown 파일**로 
 처음 사용 시 설치:
 
 ```bash
-pip install playwright
+pip install playwright deep-translator
 playwright install chromium
 ```
+
+`deep-translator`는 번역 기능(`--translate ko`) 사용 시 필요하다.
 
 ---
 
@@ -55,6 +57,8 @@ playwright install chromium
 ```bash
 cd D:/Web_Dev/ClaudeSkills/threads-archiver
 PYTHONIOENCODING=utf-8 python scripts/fetch_threads.py "<THREADS_URL>" --output "<저장할_경로>"
+# 번역이 필요한 경우 --translate ko 추가
+PYTHONIOENCODING=utf-8 python scripts/fetch_threads.py "<THREADS_URL>" --output "<저장할_경로>" --translate ko
 ```
 
 완료 후 생성된 `.md` 파일 경로, 포스트 수, 이미지 수를 사용자에게 알린다.
@@ -146,11 +150,13 @@ PYTHONIOENCODING=utf-8 python scripts/split_urls.py /tmp/urls.txt \
 - start-date: <마지막_수집일 + 1일>  (예: 마지막 수집일이 2026-04-18이면 2026-04-19)
 - 저장 경로: <저장_경로>
 - 스킬 디렉토리: D:/Web_Dev/ClaudeSkills/threads-archiver
+- 번역: <번역 컬럼 값이 ko 등 언어코드이면 "--translate ko" 옵션을 bulk_download.py에 추가, "-"이면 생략>
 
 실행 순서:
 1. fetch_profile_urls.py로 URL 목록 수집 (--max-scrolls 20)
 2. URL 수 확인 후 적절한 방법으로 bulk_download 실행
    (≤50개: workers 3 직접 실행 / >50개: split_urls.py로 분할 후 서브 Agent 병렬 실행)
+   번역 계정이면 bulk_download.py 명령에 --translate <코드> 추가
 3. 성공/실패 수 보고
 ```
 
@@ -181,6 +187,22 @@ tags:
 ## 1/5
 ...
 ```
+
+---
+
+## 중복 수집 방지 (_collected.log)
+
+`bulk_download.py`는 출력 폴더에 `_collected.log`를 자동 생성·관리한다.
+
+```
+# _collected.log 형식
+https://www.threads.com/@claudeai/post/DXPLhwKAMS_	2026-04-18T15:30:22	Anthropic Labs의 Claude Design 소개....md
+```
+
+- 수집 성공 시 URL + 수집일시 + 파일명을 기록
+- 다음 수집 시 이미 기록된 URL은 자동으로 건너뜀
+- **파일을 이동·이름 변경해도** 로그는 출력 폴더에 남아 중복을 막음
+- `--no-dedup` 옵션으로 중복 체크 비활성화 가능
 
 ---
 

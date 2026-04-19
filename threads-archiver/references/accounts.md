@@ -7,11 +7,15 @@
 
 ## 등록된 계정
 
-| 계정 | 프로필 URL | 저장 경로 | 마지막 수집일 |
-|---|---|---|---|
-| @specal1849 | https://www.threads.com/@specal1849 | D:\Dropbox\00_Note\Project\43.AI Curriculum\_Inbox | 2026-04-18 |
-| @unclejobs.ai | https://www.threads.com/@unclejobs.ai | D:\Dropbox\00_Note\Project\43.AI Curriculum\_Inbox | 2026-04-18 |
-| @choi.openai | https://www.threads.com/@choi.openai | D:\Dropbox\00_Note\Project\43.AI Curriculum\_Inbox | 2026-04-18 |
+| 계정 | 프로필 URL | 저장 경로 | 마지막 수집일 | 번역 |
+|---|---|---|---|---|
+| @specal1849 | https://www.threads.com/@specal1849 | D:\Dropbox\00_Note\Project\43.AI Curriculum\_Inbox | 2026-04-19 | - |
+| @unclejobs.ai | https://www.threads.com/@unclejobs.ai | D:\Dropbox\00_Note\Project\43.AI Curriculum\_Inbox | 2026-04-19 | - |
+| @choi.openai | https://www.threads.com/@choi.openai | D:\Dropbox\00_Note\Project\43.AI Curriculum\_Inbox | 2026-04-19 | - |
+| @flowkater | https://www.threads.com/@flowkater | D:\Dropbox\00_Note\Project\43.AI Curriculum\_Inbox | 2026-04-19 | - |
+| @claudeai | https://www.threads.com/@claudeai | D:\Dropbox\00_Note\Project\43.AI Curriculum\AI-Official-Threads\@claudeai | 2026-04-19 | ko |
+| @chatgpt | https://www.threads.com/@chatgpt | D:\Dropbox\00_Note\Project\43.AI Curriculum\AI-Official-Threads\@chatgpt | 2026-04-19 | ko |
+| @google | https://www.threads.com/@google | D:\Dropbox\00_Note\Project\43.AI Curriculum\AI-Official-Threads\@google | 2026-04-19 | ko |
 
 ---
 
@@ -20,8 +24,10 @@
 아래 행을 복사하여 표에 추가한다:
 
 ```
-| @계정명 | https://www.threads.com/@계정명 | C:/저장/경로 | YYYY-MM-DD |
+| @계정명 | https://www.threads.com/@계정명 | C:/저장/경로 | YYYY-MM-DD | - |
 ```
+
+번역이 필요한 계정은 마지막 컬럼에 언어 코드(예: `ko`)를 입력한다.
 
 ---
 
@@ -33,3 +39,4 @@
 | 프로필 URL | 프로필 페이지 전체 URL |
 | 저장 경로 | 수집한 .md 파일을 저장할 로컬 경로 |
 | 마지막 수집일 | 가장 최근에 수집한 날짜 (업데이트 수집 시 이 날짜 다음 날부터 수집) |
+| 번역 | 번역 대상 언어 코드 (예: `ko`). `-`이면 번역 안 함. 업데이트 수집 시 `--translate <코드>` 옵션 자동 적용 |

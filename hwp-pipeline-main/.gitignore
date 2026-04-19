@@ -1,0 +1,30 @@
+# Java build artifacts
+java/target/
+java/*.class
+*.jar
+!java/hwp2hwpx-fat.jar
+
+# Maven
+.m2/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Example outputs
+examples/out/

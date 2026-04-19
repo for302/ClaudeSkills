@@ -13,6 +13,56 @@ from pathlib import Path
 
 
 # ─────────────────────────────────────────────
+# 번역 유틸리티
+# ─────────────────────────────────────────────
+
+def translate_text(text: str, target_lang: str) -> str:
+    """텍스트를 target_lang으로 번역 (deep-translator 사용)"""
+    if not text or not text.strip():
+        return text
+    try:
+        from deep_translator import GoogleTranslator
+        max_len = 4500
+        if len(text) <= max_len:
+            result = GoogleTranslator(source='auto', target=target_lang).translate(text)
+            return result if result else text
+        # 긴 텍스트: 단락별 분할 번역
+        paragraphs = text.split('\n')
+        translated_parts = []
+        chunk_lines = []
+        chunk_len = 0
+        for para in paragraphs:
+            if chunk_len + len(para) + 1 > max_len and chunk_lines:
+                chunk = '\n'.join(chunk_lines)
+                result = GoogleTranslator(source='auto', target=target_lang).translate(chunk)
+                translated_parts.append(result if result else chunk)
+                chunk_lines = [para]
+                chunk_len = len(para)
+            else:
+                chunk_lines.append(para)
+                chunk_len += len(para) + 1
+        if chunk_lines:
+            chunk = '\n'.join(chunk_lines)
+            result = GoogleTranslator(source='auto', target=target_lang).translate(chunk)
+            translated_parts.append(result if result else chunk)
+        return '\n'.join(translated_parts)
+    except ImportError:
+        print('경고: deep-translator 미설치. pip install deep-translator', file=sys.stderr)
+        return text
+    except Exception as e:
+        print(f'번역 오류: {e}', file=sys.stderr)
+        return text
+
+
+def translate_posts(posts: list, target_lang: str) -> list:
+    """포스트 목록의 텍스트를 번역 (원본 리스트 수정)"""
+    for post in posts:
+        if post.get('text'):
+            post['text'] = translate_text(post['text'], target_lang)
+    return posts
+
+
+# ─────────────────────────────────────────────
 # 날짜 유틸리티
 # ─────────────────────────────────────────────
 
@@ -271,7 +321,7 @@ def extract_posts_from_page(page, target_author: str, extra_jsons: list) -> list
 # 마크다운 생성
 # ─────────────────────────────────────────────
 
-def build_markdown(posts: list[dict], url: str, author: str, today: datetime) -> str:
+def build_markdown(posts: list[dict], url: str, author: str, today: datetime, translated_to: str = '') -> str:
     """포스트 목록으로 Obsidian 최적화 Markdown 문서 생성"""
 
     if not posts:
@@ -302,6 +352,10 @@ def build_markdown(posts: list[dict], url: str, author: str, today: datetime) ->
         f'author: "@{author}"',
         f'date: "{date_str}"',
         f'total_posts: {total_posts}',
+    ]
+    if translated_to:
+        yaml_lines.append(f'translated_to: "{translated_to}"')
+    yaml_lines += [
         'tags:',
         '  - threads',
         '  - archive',
@@ -361,6 +415,8 @@ def main():
     parser.add_argument('url', help='Threads 포스트 URL')
     parser.add_argument('--output', '-o', default='.', help='저장 디렉토리 (기본: 현재 디렉토리)')
     parser.add_argument('--timeout', type=int, default=30000, help='페이지 로드 타임아웃 ms (기본: 30000)')
+    parser.add_argument('--translate', metavar='LANG', default='',
+                        help='번역할 언어 코드 (예: ko). 지정 시 포스트 내용을 해당 언어로 번역')
     args = parser.parse_args()
 
     url = args.url
@@ -494,9 +550,17 @@ def main():
         if min_ta > 0:
             posts = [p for p in posts if abs(p.get('taken_at', 0) - min_ta) <= 300]
 
-    print(f'[4/4] Markdown 생성 중... (포스트 {len(posts)}개)', flush=True)
+    # 번역 (--translate 지정 시)
+    if args.translate:
+        print(f'[4/5] 한국어 번역 중... (포스트 {len(posts)}개)', flush=True)
+        posts = translate_posts(posts, args.translate)
+        print_step = '[5/5]'
+    else:
+        print_step = '[4/4]'
 
-    md_content = build_markdown(posts, url, author, today)
+    print(f'{print_step} Markdown 생성 중... (포스트 {len(posts)}개)', flush=True)
+
+    md_content = build_markdown(posts, url, author, today, translated_to=args.translate)
 
     if not md_content:
         print('오류: Markdown 생성에 실패했습니다.', file=sys.stderr)
